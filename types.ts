@@ -71,6 +71,7 @@ export interface MaterialRequest {
   sector: Sector;
   status: RequestStatus;
   requestedAt: string;
+  requesterName?: string; // Added to track who made the request
 }
 
 export interface User {

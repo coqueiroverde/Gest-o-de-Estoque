@@ -30,7 +30,10 @@ import {
   Layers,
   ClipboardCheck,
   ShoppingCart,
-  XOctagon
+  XOctagon,
+  Loader2,
+  Clock,
+  User as UserIcon
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 
@@ -46,6 +49,7 @@ import {
   User,
   PriceHistoryEntry
 } from './types';
+import { api } from './services/api';
 import { generateInventoryInsights } from './services/geminiService';
 import { InventoryForm } from './components/InventoryForm';
 import { StockMovementModal } from './components/StockMovementModal';
@@ -58,159 +62,31 @@ import { StatsCard } from './components/StatsCard';
 import { InventoryChart } from './components/InventoryChart';
 import { LoginScreen } from './components/LoginScreen';
 
-// Helper to generate initial data
-const createItem = (id: string, unitId: string, name: string, cat: string, min: number, unit: string, price: number = 0): InventoryItem => ({
-  id: `${id}-${unitId}`,
-  unitId,
-  name,
-  category: cat,
-  quantity: min + (min > 0 ? Math.ceil(min * 0.2) : 0), // Start slightly above min
-  unit,
-  price,
-  minStock: min,
-  description: 'Carga Inicial',
-  lastUpdated: new Date().toISOString(),
-  priceHistory: [{ date: new Date().toISOString(), price }]
-});
-
-const RAW_DATA = [
-  // Mercearia
-  { name: 'MARGARINA BALDE 15KG', cat: 'Mercearia', unit: 'un', p14: 2, p10: 2 },
-  { name: 'ÓLEO CX 20', cat: 'Mercearia', unit: 'cx', p14: 5, p10: 5 },
-  { name: 'QUEIJO RALADO PC 50GR', cat: 'Mercearia', unit: 'pct', p14: 1, p10: 1 },
-  { name: 'SAL COMUM FD 30', cat: 'Mercearia', unit: 'pct', p14: 1, p10: 1 },
-  { name: 'SAL REFINADO FD 10 LEBR', cat: 'Mercearia', unit: 'pct', p14: 3, p10: 0 },
-  { name: 'SAL SACHÊ CX 2000', cat: 'Mercearia', unit: 'cx', p14: 1, p10: 1 },
-  { name: 'SAZON FEIJÃO PC 12 SACH', cat: 'Mercearia', unit: 'pct', p14: 15, p10: 15 },
-  { name: 'TRIGO KG', cat: 'Mercearia', unit: 'kg', p14: 1, p10: 1 },
-  { name: 'VINAGRE BRANCO 750ML', cat: 'Mercearia', unit: 'un', p14: 24, p10: 24 },
-  { name: 'SAL GROSSO KG', cat: 'Mercearia', unit: 'kg', p14: 3, p10: 3 },
-  
-  // Limpeza
-  { name: 'ÁGUA SANITÁRIA 5L', cat: 'Limpeza', unit: 'L', p14: 1, p10: 1 },
-  { name: 'ALCOOL 5L', cat: 'Limpeza', unit: 'L', p14: 1, p10: 1 },
-  { name: 'BOMBRIL PCT 14', cat: 'Limpeza', unit: 'pct', p14: 1, p10: 1 },
-  { name: 'CERA 5L', cat: 'Limpeza', unit: 'L', p14: 0, p10: 0 },
-  { name: 'DESENGORDURANTE/DES', cat: 'Limpeza', unit: 'L', p14: 1, p10: 1 },
-  { name: 'DESINFETANTE 5L', cat: 'Limpeza', unit: 'L', p14: 1, p10: 1 },
-  { name: 'DETERGENTE MÁQUINA 5', cat: 'Limpeza', unit: 'L', p14: 1, p10: 1 },
-  { name: 'DETERGENTE NEUTRO 5L', cat: 'Limpeza', unit: 'L', p14: 2, p10: 2 },
-  { name: 'DETERGERTE ÁREA EXTER', cat: 'Limpeza', unit: 'L', p14: 1, p10: 1 },
-  { name: 'ESPONJA PCT 4', cat: 'Limpeza', unit: 'pct', p14: 1, p10: 1 },
-  { name: 'FIBRA DE LIMPEZA PESAD', cat: 'Limpeza', unit: 'un', p14: 1, p10: 1 },
-  { name: 'LIMPA ALUMÍNIO 5L', cat: 'Limpeza', unit: 'L', p14: 1, p10: 1 },
-  { name: 'LIMPA FORNO UN', cat: 'Limpeza', unit: 'un', p14: 0, p10: 0 },
-  { name: 'PANO DE CHÃO', cat: 'Limpeza', unit: 'un', p14: 4, p10: 4 },
-  { name: 'PANO MULTI USO BRANCO', cat: 'Limpeza', unit: 'un', p14: 1, p10: 1 },
-  { name: 'PANO MULTI USO VERDE', cat: 'Limpeza', unit: 'un', p14: 1, p10: 1 },
-  { name: 'PASTILHA DE CLORO', cat: 'Limpeza', unit: 'un', p14: 2, p10: 2 },
-  { name: 'PROTETOR DE ASSENTO C', cat: 'Limpeza', unit: 'cx', p14: 2, p10: 2 },
-  { name: 'RODO', cat: 'Limpeza', unit: 'un', p14: 0, p10: 0 },
-  { name: 'SABONETE LÍQUIDO 5L', cat: 'Limpeza', unit: 'L', p14: 1, p10: 1 },
-  { name: 'SECANTE MÁQUINA 5L', cat: 'Limpeza', unit: 'L', p14: 1, p10: 1 },
-  { name: 'VASSOURA', cat: 'Limpeza', unit: 'un', p14: 0, p10: 0 },
-  { name: 'LUVA LIMPEZA PESADA', cat: 'Limpeza', unit: 'un', p14: 0, p10: 0 },
-
-  // Material de Expediente
-  { name: 'BOBINA AMARELA CX', cat: 'Expediente', unit: 'cx', p14: 2, p10: 2 },
-  { name: 'BOBINA BRANCA CX', cat: 'Expediente', unit: 'cx', p14: 0, p10: 0 },
-  { name: 'BOBINA ROSA CX', cat: 'Expediente', unit: 'cx', p14: 0, p10: 0 },
-  { name: 'CLIPS TAMANHO 4 CX', cat: 'Expediente', unit: 'cx', p14: 1, p10: 1 },
-  { name: 'GRAMPO 26/6 CX', cat: 'Expediente', unit: 'cx', p14: 1, p10: 1 },
-  { name: 'LACRE DELIVERY MILHEIRO', cat: 'Expediente', unit: 'un', p14: 5, p10: 5 },
-  { name: 'LIGA ELÁSTICA PCT C/50', cat: 'Expediente', unit: 'pct', p14: 1, p10: 1 },
-  { name: 'PAPEL CHAMBRIL PCT 500', cat: 'Expediente', unit: 'pct', p14: 2, p10: 2 },
-  { name: 'PAPEL A4 RESMA', cat: 'Expediente', unit: 'pct', p14: 2, p10: 2 },
-  { name: 'BLOCO DE VALE', cat: 'Expediente', unit: 'un', p14: 1, p10: 1 },
-
-  // Outros
-  { name: 'VENENO DE BARATA GEL', cat: 'Outros', unit: 'un', p14: 0, p10: 0 },
-  { name: 'VENENO DE BARATA LÍQU', cat: 'Outros', unit: 'L', p14: 0, p10: 0 },
-
-  // Carnes / Proteínas
-  { name: 'PICADINHO 1 KG', cat: 'Carnes', unit: 'kg', p14: 5, p10: 0 },
-  { name: 'ISCA DE CARNE 1 KG', cat: 'Carnes', unit: 'kg', p14: 5, p10: 0 },
-  { name: 'BIFE 1 KG', cat: 'Carnes', unit: 'kg', p14: 5, p10: 0 },
-  { name: 'LINGUIÇA DE FRANGO PCT', cat: 'Carnes', unit: 'pct', p14: 5, p10: 0 },
-  { name: 'ACEM 5 KG', cat: 'Carnes', unit: 'kg', p14: 5, p10: 0 },
-  { name: 'FRANGO CX', cat: 'Carnes', unit: 'cx', p14: 1, p10: 0 },
-  { name: 'QUEIJO ESPETO PCT', cat: 'Carnes', unit: 'pct', p14: 20, p10: 10 },
-  { name: 'ANEIS DE CEBOLA PCT', cat: 'Carnes', unit: 'pct', p14: 3, p10: 0 },
-  { name: 'BACON PC', cat: 'Carnes', unit: 'pct', p14: 2, p10: 3 },
-  { name: 'CORAÇÃO DE FRANGO PCT', cat: 'Carnes', unit: 'pct', p14: 2, p10: 1 },
-  { name: 'LINGUIÇA TOSCANA PCT', cat: 'Carnes', unit: 'pct', p14: 5, p10: 2 },
-
-  // Descartáveis
-  { name: 'CANUDO BIODEGRADÁVEL PC 100', cat: 'Descartáveis', unit: 'pct', p14: 2, p10: 0 },
-  { name: 'CANUDO DRINKS PC 100', cat: 'Descartáveis', unit: 'pct', p14: 1, p10: 0 },
-  { name: 'COPO 180ML PC', cat: 'Descartáveis', unit: 'pct', p14: 1, p10: 3 },
-  { name: 'DUREX FINO PC 16', cat: 'Descartáveis', unit: 'pct', p14: 0, p10: 5 },
-  { name: 'DUREX GROSSO UN', cat: 'Descartáveis', unit: 'un', p14: 0, p10: 5 },
-  { name: 'EMBALAGEM AG50 CX 4X125', cat: 'Descartáveis', unit: 'cx', p14: 9, p10: 9 },
-  { name: 'EMBALAGEM D7 PC 100', cat: 'Descartáveis', unit: 'pct', p14: 1, p10: 1 },
-  { name: 'EMBALAGEM G-302 CX C/100', cat: 'Descartáveis', unit: 'cx', p14: 6, p10: 6 },
-  { name: 'EMBALAGEM G-645 CX C/100', cat: 'Descartáveis', unit: 'cx', p14: 6, p10: 2 },
-  { name: 'EMBALAGEM G-742 CX C/200', cat: 'Descartáveis', unit: 'cx', p14: 3, p10: 2 },
-  { name: 'FILME SELADORA GRANDE', cat: 'Descartáveis', unit: 'un', p14: 15, p10: 10 },
-  { name: 'FILME SELADORA PEQUENO', cat: 'Descartáveis', unit: 'un', p14: 0, p10: 0 },
-  { name: 'FILTRO DE CAFÉ 103 CX', cat: 'Descartáveis', unit: 'cx', p14: 0, p10: 3 },
-  { name: 'GARRAFA PET 100ML PCT C/30', cat: 'Descartáveis', unit: 'pct', p14: 15, p10: 14 },
-  { name: 'GARRAFA PET 1L PCT C/30', cat: 'Descartáveis', unit: 'pct', p14: 10, p10: 10 },
-  { name: 'GARRAFA PET 300ML PCT C/30', cat: 'Descartáveis', unit: 'pct', p14: 10, p10: 10 },
-  { name: 'GARRAFA PET 500ML PCT C/30', cat: 'Descartáveis', unit: 'pct', p14: 10, p10: 10 },
-  { name: 'GUARDANAPO INTERFOLHADO CX C/6000', cat: 'Descartáveis', unit: 'cx', p14: 1, p10: 1 },
-  { name: 'LUVAS DESCARTAVEIS CX', cat: 'Descartáveis', unit: 'cx', p14: 0, p10: 0 },
-  { name: 'MEXEDOR DE CAFÉ PC 500', cat: 'Descartáveis', unit: 'pct', p14: 5, p10: 2 },
-  { name: 'PAILITO DE DENTE EMBALADO CX 2000', cat: 'Descartáveis', unit: 'cx', p14: 0, p10: 2 },
-  { name: 'PAPEL HIGIÊNICO ROLO PCT C/8 200 METR', cat: 'Descartáveis', unit: 'pct', p14: 3, p10: 2 },
-  { name: 'PAPEL TOALHA ROLO 200MTS C/6', cat: 'Descartáveis', unit: 'un', p14: 0, p10: 4 },
-  { name: 'PRATO DESCARTÁVEL 21 RASO PCT', cat: 'Descartáveis', unit: 'pct', p14: 2, p10: 2 },
-  { name: 'SACO 1/2KG PCT', cat: 'Descartáveis', unit: 'pct', p14: 7, p10: 4 },
-  { name: 'SACO 24X38 TRANSP PCT C/100', cat: 'Descartáveis', unit: 'pct', p14: 1, p10: 2 },
-  { name: 'SACO ADESIVO 8X10 PCT', cat: 'Descartáveis', unit: 'pct', p14: 1, p10: 0 },
-  { name: 'SACO CRAFT PCT 100', cat: 'Descartáveis', unit: 'pct', p14: 15, p10: 9 },
-  { name: 'SACO DE LIXO 200LTS PCT 50', cat: 'Descartáveis', unit: 'pct', p14: 3, p10: 2 },
-  { name: 'SACO DE LIXO 50 LTS PTC 100', cat: 'Descartáveis', unit: 'pct', p14: 2, p10: 2 },
-  { name: 'SACO DINDIN PCT 500', cat: 'Descartáveis', unit: 'pct', p14: 4, p10: 4 },
-  { name: 'SACO METALIZADO C/2000', cat: 'Descartáveis', unit: 'un', p14: 2, p10: 2 },
-  { name: 'SACOLA BRANCA 8KG PCT 100', cat: 'Descartáveis', unit: 'pct', p14: 1, p10: 2 },
-  { name: 'TALHERES DESCARTÁVEIS C/50', cat: 'Descartáveis', unit: 'pct', p14: 1, p10: 0 },
-  { name: 'TOUCA DESCARTÁVEL PCT C/100', cat: 'Descartáveis', unit: 'pct', p14: 1, p10: 1 },
-  { name: 'VELA VULÇÃO AZUL', cat: 'Descartáveis', unit: 'un', p14: 5, p10: 5 },
-  { name: 'VELA VULÇÃO ROSA', cat: 'Descartáveis', unit: 'un', p14: 6, p10: 5 },
-];
-
-const INITIAL_ITEMS: InventoryItem[] = RAW_DATA.flatMap((d, index) => [
-  createItem(`${index}`, 'P14', d.name, d.cat, d.p14, d.unit),
-  createItem(`${index}`, 'P10', d.name, d.cat, d.p10, d.unit)
-]);
-
 export function App() {
   // --- AUTH STATE ---
   const [user, setUser] = useState<User | null>(null);
+  const [isLoadingUser, setIsLoadingUser] = useState(true);
 
   useEffect(() => {
-    const savedUser = localStorage.getItem('cv_user');
-    if (savedUser) {
-      setUser(JSON.parse(savedUser));
-    }
+    api.getUser().then(u => {
+      setUser(u);
+      setIsLoadingUser(false);
+    });
   }, []);
 
-  const handleLogin = () => {
-    const mockUser: User = {
-      id: 'u1',
-      name: 'Chef Executivo',
-      email: 'chef@coqueiroverde.com.br',
+  const handleLogin = (name: string, email: string) => {
+    const newUser: User = {
+      id: crypto.randomUUID(),
+      name,
+      email,
       avatar: '',
       role: 'admin'
     };
-    localStorage.setItem('cv_user', JSON.stringify(mockUser));
-    setUser(mockUser);
+    api.login(newUser).then(() => setUser(newUser));
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('cv_user');
-    setUser(null);
+    api.logout().then(() => setUser(null));
   };
 
   // --- APP STATE ---
@@ -218,20 +94,27 @@ export function App() {
   const [selectedUnit, setSelectedUnit] = useState<RestaurantUnit>('P10');
   
   // Data State
-  const [items, setItems] = useState<InventoryItem[]>(() => {
-    const saved = localStorage.getItem('cv_inventory_data');
-    return saved ? JSON.parse(saved) : INITIAL_ITEMS;
-  });
+  const [items, setItems] = useState<InventoryItem[]>([]);
+  const [transactions, setTransactions] = useState<StockTransaction[]>([]);
+  const [requests, setRequests] = useState<MaterialRequest[]>([]);
+  const [isLoadingData, setIsLoadingData] = useState(true);
 
-  const [transactions, setTransactions] = useState<StockTransaction[]>(() => {
-    const saved = localStorage.getItem('cv_transactions');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [requests, setRequests] = useState<MaterialRequest[]>(() => {
-    const saved = localStorage.getItem('cv_requests');
-    return saved ? JSON.parse(saved) : [];
-  });
+  // Load Initial Data
+  useEffect(() => {
+    if (user) {
+      setIsLoadingData(true);
+      Promise.all([
+        api.getItems(),
+        api.getTransactions(),
+        api.getRequests()
+      ]).then(([fetchedItems, fetchedTransactions, fetchedRequests]) => {
+        setItems(fetchedItems);
+        setTransactions(fetchedTransactions);
+        setRequests(fetchedRequests);
+        setIsLoadingData(false);
+      });
+    }
+  }, [user]);
 
   // UI State
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -240,6 +123,7 @@ export function App() {
   
   // Bulk Modal States
   const [isBulkMovementOpen, setIsBulkMovementOpen] = useState(false);
+  const [bulkMovementType, setBulkMovementType] = useState<MovementType | undefined>(undefined); // New state to control initial mode
   const [isBulkRequestOpen, setIsBulkRequestOpen] = useState(false);
   const [isStockCountOpen, setIsStockCountOpen] = useState(false);
   const [isPurchaseOrderOpen, setIsPurchaseOrderOpen] = useState(false);
@@ -248,37 +132,40 @@ export function App() {
   const [selectedItemForMovement, setSelectedItemForMovement] = useState<InventoryItem | null>(null);
   
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('Todos'); // Category Filter State
+
   const [aiInsights, setAiInsights] = useState<string>('');
   const [isGeneratingInsights, setIsGeneratingInsights] = useState(false);
 
-  // --- PERSISTENCE ---
-  useEffect(() => {
-    localStorage.setItem('cv_inventory_data', JSON.stringify(items));
-  }, [items]);
-
-  useEffect(() => {
-    localStorage.setItem('cv_transactions', JSON.stringify(transactions));
-  }, [transactions]);
-
-  useEffect(() => {
-    localStorage.setItem('cv_requests', JSON.stringify(requests));
-  }, [requests]);
+  const [viewRequestHistory, setViewRequestHistory] = useState(false);
 
   // --- DERIVED DATA ---
   const currentUnitItems = useMemo(() => {
     return items.filter(item => item.unitId === selectedUnit);
   }, [items, selectedUnit]);
 
+  // Extract unique categories for the dropdown
+  const availableCategories = useMemo(() => {
+    const cats = new Set(currentUnitItems.map(i => i.category));
+    return ['Todos', ...Array.from(cats).sort()];
+  }, [currentUnitItems]);
+
   const filteredItems = useMemo(() => {
-    return currentUnitItems.filter(item => 
-      item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.category.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-  }, [currentUnitItems, searchTerm]);
+    return currentUnitItems.filter(item => {
+      const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                            item.category.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesCategory = selectedCategory === 'Todos' || item.category === selectedCategory;
+      
+      return matchesSearch && matchesCategory;
+    });
+  }, [currentUnitItems, searchTerm, selectedCategory]);
 
   const currentUnitRequests = useMemo(() => {
     return requests.filter(r => r.unitId === selectedUnit).sort((a, b) => new Date(b.requestedAt).getTime() - new Date(a.requestedAt).getTime());
   }, [requests, selectedUnit]);
+
+  const pendingRequests = useMemo(() => currentUnitRequests.filter(r => r.status === 'PENDING'), [currentUnitRequests]);
+  const historyRequests = useMemo(() => currentUnitRequests.filter(r => r.status !== 'PENDING'), [currentUnitRequests]);
 
   const currentUnitTransactions = useMemo(() => {
     return transactions.filter(t => t.unitId === selectedUnit).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -304,27 +191,28 @@ export function App() {
   // --- HANDLERS ---
 
   // Inventory CRUD
-  const handleSaveItem = (itemData: Omit<InventoryItem, 'id' | 'lastUpdated' | 'unitId' | 'priceHistory'>) => {
+  const handleSaveItem = async (itemData: Omit<InventoryItem, 'id' | 'lastUpdated' | 'unitId' | 'priceHistory'>) => {
+    let updatedItems = [...items];
+    
     if (editingItem) {
-      setItems(prev => prev.map(item => {
+      updatedItems = updatedItems.map(item => {
         if (item.id === editingItem.id) {
-          const updatedItem = { 
+          const updated = { 
             ...item, 
             ...itemData, 
             lastUpdated: new Date().toISOString() 
           };
-          
           // Add to price history if price changed
           if (item.price !== itemData.price) {
-            updatedItem.priceHistory = [
+            updated.priceHistory = [
               ...(item.priceHistory || []),
               { date: new Date().toISOString(), price: itemData.price }
             ];
           }
-          return updatedItem;
+          return updated;
         }
         return item;
-      }));
+      });
     } else {
       const newItem: InventoryItem = {
         ...itemData,
@@ -333,24 +221,29 @@ export function App() {
         lastUpdated: new Date().toISOString(),
         priceHistory: [{ date: new Date().toISOString(), price: itemData.price }]
       };
-      setItems(prev => [...prev, newItem]);
+      updatedItems.push(newItem);
     }
+    
+    setItems(updatedItems);
+    await api.saveItems(updatedItems);
     setIsFormOpen(false);
     setEditingItem(undefined);
   };
 
-  const handleDeleteItem = (id: string) => {
+  const handleDeleteItem = async (id: string) => {
     if (confirm('Tem certeza que deseja remover este item do cadastro? O histórico será mantido.')) {
-      setItems(prev => prev.filter(item => item.id !== id));
+      const updatedItems = items.filter(item => item.id !== id);
+      setItems(updatedItems);
+      await api.saveItems(updatedItems);
     }
   };
 
   // Stock Movement Logic (Single)
-  const handleRegisterMovement = (type: MovementType, quantity: number, reason: string, newCost?: number) => {
+  const handleRegisterMovement = async (type: MovementType, quantity: number, reason: string, newCost?: number) => {
     if (!selectedItemForMovement) return;
 
     // 1. Update Inventory Item
-    setItems(prev => prev.map(item => {
+    const updatedItems = items.map(item => {
       if (item.id === selectedItemForMovement.id) {
         let newQty = item.quantity;
         let newPrice = item.price;
@@ -378,7 +271,7 @@ export function App() {
         };
       }
       return item;
-    }));
+    });
 
     // 2. Create Transaction Log
     const transaction: StockTransaction = {
@@ -394,19 +287,25 @@ export function App() {
       user: user?.name || 'Sistema'
     };
 
+    setItems(updatedItems);
     setTransactions(prev => [transaction, ...prev]);
+    
+    await Promise.all([
+      api.saveItems(updatedItems),
+      api.saveTransactions([transaction, ...transactions])
+    ]);
+
     setIsMovementModalOpen(false);
     setSelectedItemForMovement(null);
   };
 
   // Bulk Stock Movement
-  const handleBulkMovement = (movements: { itemId: string; quantity: number; cost?: number }[], type: MovementType, reason: string) => {
+  const handleBulkMovement = async (movements: { itemId: string; quantity: number; cost?: number; updatePrice?: boolean }[], type: MovementType, reason: string) => {
     const timestamp = new Date().toISOString();
     const newTransactions: StockTransaction[] = [];
 
     // Update Items
-    setItems(prevItems => {
-      return prevItems.map(item => {
+    const updatedItems = items.map(item => {
         const move = movements.find(m => m.itemId === item.id);
         if (move) {
           let newQty = item.quantity;
@@ -416,10 +315,13 @@ export function App() {
           if (type === 'ENTRY_PURCHASE') {
             newQty += move.quantity;
             if (move.cost !== undefined) {
-               if (move.cost !== item.price) {
-                 updatedHistory = [...updatedHistory, { date: timestamp, price: move.cost }];
+               // Only update master price if requested (default is true in logic if undefined, handled in UI)
+               if (move.updatePrice !== false) { 
+                   if (move.cost !== item.price) {
+                     updatedHistory = [...updatedHistory, { date: timestamp, price: move.cost }];
+                   }
+                   newPrice = move.cost;
                }
-               newPrice = move.cost;
             }
           } else {
             newQty -= move.quantity;
@@ -449,19 +351,25 @@ export function App() {
         }
         return item;
       });
-    });
 
-    setTransactions(prev => [...newTransactions, ...prev]);
+    setItems(updatedItems);
+    const updatedTransactions = [...newTransactions, ...transactions];
+    setTransactions(updatedTransactions);
+
+    await Promise.all([
+      api.saveItems(updatedItems),
+      api.saveTransactions(updatedTransactions)
+    ]);
+
     setIsBulkMovementOpen(false);
   };
 
   // Finalize Stock Count
-  const handleFinalizeStockCount = (counts: { itemId: string; countedQty: number }[]) => {
+  const handleFinalizeStockCount = async (counts: { itemId: string; countedQty: number }[]) => {
     const timestamp = new Date().toISOString();
     const newTransactions: StockTransaction[] = [];
 
-    setItems(prevItems => {
-      return prevItems.map(item => {
+    const updatedItems = items.map(item => {
         const countEntry = counts.find(c => c.itemId === item.id);
         if (countEntry) {
           const diff = countEntry.countedQty - item.quantity;
@@ -489,9 +397,16 @@ export function App() {
         }
         return item;
       });
-    });
 
-    setTransactions(prev => [...newTransactions, ...prev]);
+    setItems(updatedItems);
+    const updatedTransactions = [...newTransactions, ...transactions];
+    setTransactions(updatedTransactions);
+
+    await Promise.all([
+      api.saveItems(updatedItems),
+      api.saveTransactions(updatedTransactions)
+    ]);
+
     setIsStockCountOpen(false);
     
     // Suggest purchase report
@@ -503,7 +418,7 @@ export function App() {
   };
 
   // Material Requests
-  const handleCreateRequest = (itemId: string, quantity: number, sector: Sector) => {
+  const handleCreateRequest = async (itemId: string, quantity: number, sector: Sector) => {
     const item = items.find(i => i.id === itemId);
     if (!item) return;
 
@@ -516,15 +431,18 @@ export function App() {
       unit: item.unit,
       sector,
       status: 'PENDING',
-      requestedAt: new Date().toISOString()
+      requestedAt: new Date().toISOString(),
+      requesterName: user?.name || 'Desconhecido' // Track who asked
     };
 
-    setRequests(prev => [newRequest, ...prev]);
+    const updatedRequests = [newRequest, ...requests];
+    setRequests(updatedRequests);
+    await api.saveRequests(updatedRequests);
     setIsRequestModalOpen(false);
   };
 
   // Bulk Material Request
-  const handleBulkRequest = (bulkRequests: { itemId: string; quantity: number }[], sector: Sector) => {
+  const handleBulkRequest = async (bulkRequests: { itemId: string; quantity: number }[], sector: Sector) => {
     const timestamp = new Date().toISOString();
     const newRequestObjects: MaterialRequest[] = [];
 
@@ -540,16 +458,19 @@ export function App() {
           unit: item.unit,
           sector,
           status: 'PENDING',
-          requestedAt: timestamp
+          requestedAt: timestamp,
+          requesterName: user?.name || 'Desconhecido'
         });
       }
     });
 
-    setRequests(prev => [...newRequestObjects, ...prev]);
+    const updatedRequests = [...newRequestObjects, ...requests];
+    setRequests(updatedRequests);
+    await api.saveRequests(updatedRequests);
     setIsBulkRequestOpen(false);
   };
 
-  const handleApproveRequest = (request: MaterialRequest) => {
+  const handleApproveRequest = async (request: MaterialRequest) => {
     const item = items.find(i => i.id === request.itemId);
     if (!item) return;
 
@@ -558,12 +479,12 @@ export function App() {
       return;
     }
 
-    setItems(prev => prev.map(i => {
+    const updatedItems = items.map(i => {
       if (i.id === request.itemId) {
         return { ...i, quantity: i.quantity - request.quantity, lastUpdated: new Date().toISOString() };
       }
       return i;
-    }));
+    });
 
     const transaction: StockTransaction = {
       id: crypto.randomUUID(),
@@ -576,13 +497,25 @@ export function App() {
       date: new Date().toISOString(),
       user: user?.name || 'Sistema'
     };
-    setTransactions(prev => [transaction, ...prev]);
+    
+    const updatedTransactions = [transaction, ...transactions];
+    const updatedRequests = requests.map(r => r.id === request.id ? { ...r, status: 'APPROVED' } as MaterialRequest : r);
 
-    setRequests(prev => prev.map(r => r.id === request.id ? { ...r, status: 'APPROVED' } : r));
+    setItems(updatedItems);
+    setTransactions(updatedTransactions);
+    setRequests(updatedRequests);
+
+    await Promise.all([
+      api.saveItems(updatedItems),
+      api.saveTransactions(updatedTransactions),
+      api.saveRequests(updatedRequests)
+    ]);
   };
 
-  const handleRejectRequest = (requestId: string) => {
-    setRequests(prev => prev.map(r => r.id === requestId ? { ...r, status: 'REJECTED' } : r));
+  const handleRejectRequest = async (requestId: string) => {
+    const updatedRequests = requests.map(r => r.id === requestId ? { ...r, status: 'REJECTED' } as MaterialRequest : r);
+    setRequests(updatedRequests);
+    await api.saveRequests(updatedRequests);
   };
 
   // AI
@@ -598,8 +531,21 @@ export function App() {
     }
   };
 
+  if (isLoadingUser) {
+    return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-emerald-600 w-8 h-8" /></div>;
+  }
+
   if (!user) {
-    return <LoginScreen onLogin={handleLogin} />;
+    return <LoginScreen onLogin={() => handleLogin("Usuário Teste", "teste@coqueiroverde.com")} />;
+  }
+
+  if (isLoadingData) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 gap-4">
+        <Loader2 className="animate-spin text-emerald-600 w-10 h-10" />
+        <p className="text-slate-500 font-medium">Carregando estoque...</p>
+      </div>
+    );
   }
 
   return (
@@ -810,7 +756,10 @@ export function App() {
                 <h2 className="text-2xl font-bold text-slate-800">Estoque</h2>
                 <div className="flex gap-2 w-full md:w-auto">
                   <button 
-                    onClick={() => setIsBulkMovementOpen(true)}
+                    onClick={() => {
+                        setBulkMovementType(undefined);
+                        setIsBulkMovementOpen(true);
+                    }}
                     className="flex-1 md:flex-none bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-lg hover:bg-slate-50 transition-colors flex items-center justify-center gap-2 shadow-sm"
                   >
                     <Layers size={18} />
@@ -842,9 +791,20 @@ export function App() {
                     onChange={(e) => setSearchTerm(e.target.value)}
                   />
                 </div>
-                <div className="flex items-center gap-2 text-sm text-slate-500 bg-slate-50 px-3 py-2 rounded-lg border border-slate-200">
+                <div className="flex-shrink-0">
+                  <select
+                    value={selectedCategory}
+                    onChange={(e) => setSelectedCategory(e.target.value)}
+                    className="w-full md:w-48 h-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+                  >
+                    {availableCategories.map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex items-center gap-2 text-sm text-slate-500 bg-slate-50 px-3 py-2 rounded-lg border border-slate-200 whitespace-nowrap">
                   <Filter size={16} />
-                  <span>{filteredItems.length} insumos listados</span>
+                  <span>{filteredItems.length} itens</span>
                 </div>
               </div>
 
@@ -994,32 +954,56 @@ export function App() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {currentUnitRequests.length === 0 ? (
-                  <div className="col-span-full py-12 text-center text-slate-400 bg-white rounded-xl border border-dashed border-slate-200">
-                    Nenhuma solicitação encontrada para esta unidade.
-                  </div>
-                ) : (
-                  currentUnitRequests.map(req => (
-                    <div key={req.id} className="bg-white p-5 rounded-xl shadow-sm border border-slate-100 flex flex-col justify-between h-full">
-                      <div className="flex justify-between items-start mb-3">
-                        <span className={`px-2 py-1 rounded text-xs font-bold uppercase tracking-wide
-                          ${req.sector === 'COZINHA' ? 'bg-orange-100 text-orange-700' : 
-                            req.sector === 'BAR' ? 'bg-purple-100 text-purple-700' : 
-                            req.sector === 'SALAO' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-700'}
-                        `}>
-                          {req.sector}
-                        </span>
-                        <span className="text-xs text-slate-400">{new Date(req.requestedAt).toLocaleDateString()}</span>
-                      </div>
-                      
-                      <div className="mb-4">
-                        <h3 className="font-bold text-lg text-slate-800">{req.itemName}</h3>
-                        <p className="text-slate-500 font-medium text-sm">Quantidade: {req.quantity} {req.unit}</p>
-                      </div>
+              {/* Sub-tabs for Pending vs History */}
+              <div className="flex gap-4 border-b border-slate-200">
+                <button 
+                  onClick={() => setViewRequestHistory(false)}
+                  className={`pb-3 px-2 text-sm font-medium transition-colors relative ${!viewRequestHistory ? 'text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  Pendentes ({pendingRequests.length})
+                  {!viewRequestHistory && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-blue-600 rounded-t-full"></div>}
+                </button>
+                <button 
+                  onClick={() => setViewRequestHistory(true)}
+                  className={`pb-3 px-2 text-sm font-medium transition-colors relative ${viewRequestHistory ? 'text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  Histórico ({historyRequests.length})
+                  {viewRequestHistory && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-blue-600 rounded-t-full"></div>}
+                </button>
+              </div>
 
-                      <div className="pt-4 border-t border-slate-50">
-                        {req.status === 'PENDING' ? (
+              {/* PENDING REQUESTS VIEW */}
+              {!viewRequestHistory && (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {pendingRequests.length === 0 ? (
+                    <div className="col-span-full py-12 text-center text-slate-400 bg-white rounded-xl border border-dashed border-slate-200">
+                      Nenhuma solicitação pendente para esta unidade.
+                    </div>
+                  ) : (
+                    pendingRequests.map(req => (
+                      <div key={req.id} className="bg-white p-5 rounded-xl shadow-sm border border-slate-100 flex flex-col justify-between h-full">
+                        <div className="flex justify-between items-start mb-3">
+                          <span className={`px-2 py-1 rounded text-xs font-bold uppercase tracking-wide
+                            ${req.sector === 'COZINHA' ? 'bg-orange-100 text-orange-700' : 
+                              req.sector === 'BAR' ? 'bg-purple-100 text-purple-700' : 
+                              req.sector === 'SALAO' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-700'}
+                          `}>
+                            {req.sector}
+                          </span>
+                          <span className="text-xs text-slate-400">{new Date(req.requestedAt).toLocaleDateString()}</span>
+                        </div>
+                        
+                        <div className="mb-4">
+                          <h3 className="font-bold text-lg text-slate-800">{req.itemName}</h3>
+                          <p className="text-slate-500 font-medium text-sm">Quantidade: {req.quantity} {req.unit}</p>
+                          {req.requesterName && (
+                            <p className="text-xs text-slate-400 mt-2 flex items-center gap-1">
+                              <UserIcon size={12}/> {req.requesterName}
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="pt-4 border-t border-slate-50">
                           <div className="flex gap-2">
                              <button 
                               onClick={() => handleRejectRequest(req.id)}
@@ -1034,33 +1018,93 @@ export function App() {
                               Aprovar
                             </button>
                           </div>
-                        ) : (
-                          <div className={`w-full py-2 rounded-lg text-center text-sm font-bold flex items-center justify-center gap-2
-                            ${req.status === 'APPROVED' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}
-                          `}>
-                            {req.status === 'APPROVED' ? <CheckCircle2 size={16}/> : <XCircle size={16}/>}
-                            {req.status === 'APPROVED' ? 'Atendido' : 'Rejeitado'}
-                          </div>
-                        )}
+                        </div>
                       </div>
-                    </div>
-                  ))
-                )}
-              </div>
+                    ))
+                  )}
+                </div>
+              )}
+
+              {/* HISTORY REQUESTS VIEW */}
+              {viewRequestHistory && (
+                <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                      <thead className="bg-slate-50 border-b border-slate-200">
+                        <tr>
+                          <th className="px-6 py-4 font-semibold text-slate-600">Data</th>
+                          <th className="px-6 py-4 font-semibold text-slate-600">Item</th>
+                          <th className="px-6 py-4 font-semibold text-slate-600">Qtd</th>
+                          <th className="px-6 py-4 font-semibold text-slate-600">Setor</th>
+                          <th className="px-6 py-4 font-semibold text-slate-600">Solicitante</th>
+                          <th className="px-6 py-4 font-semibold text-slate-600 text-center">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {historyRequests.length === 0 ? (
+                          <tr>
+                            <td colSpan={6} className="px-6 py-8 text-center text-slate-400">Nenhum histórico de pedidos encontrado.</td>
+                          </tr>
+                        ) : (
+                          historyRequests.map((req) => (
+                            <tr key={req.id} className="hover:bg-slate-50/50">
+                              <td className="px-6 py-4 text-sm text-slate-500">
+                                {new Date(req.requestedAt).toLocaleDateString()} <span className="text-xs opacity-70">{new Date(req.requestedAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                              </td>
+                              <td className="px-6 py-4 font-medium text-slate-800">{req.itemName}</td>
+                              <td className="px-6 py-4 font-bold text-slate-700">{req.quantity} <span className="text-xs font-normal text-slate-500">{req.unit}</span></td>
+                              <td className="px-6 py-4">
+                                <span className="text-xs font-bold uppercase tracking-wide text-slate-600 bg-slate-100 px-2 py-1 rounded">
+                                  {req.sector}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 text-sm text-slate-600">
+                                {req.requesterName || '-'}
+                              </td>
+                              <td className="px-6 py-4 text-center">
+                                <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold border
+                                  ${req.status === 'APPROVED' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 
+                                    'bg-red-50 text-red-700 border-red-100'}
+                                `}>
+                                  {req.status === 'APPROVED' ? <CheckCircle2 size={12}/> : <XCircle size={12}/>}
+                                  {req.status === 'APPROVED' ? 'Aprovado' : 'Rejeitado'}
+                                </span>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
              </div>
           )}
 
           {/* TAB: LOSSES */}
           {activeTab === 'losses' && (
             <div className="space-y-6 animate-fade-in-up">
-              <div className="flex items-center gap-3">
-                <div className="bg-red-100 p-2 rounded-xl">
-                  <XOctagon className="text-red-600 w-6 h-6" />
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="bg-red-100 p-2 rounded-xl">
+                    <XOctagon className="text-red-600 w-6 h-6" />
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-bold text-slate-800">Registro de Perdas</h2>
+                    <p className="text-slate-500 text-sm">Histórico detalhado de baixas por perda/quebra.</p>
+                  </div>
                 </div>
-                <div>
-                  <h2 className="text-2xl font-bold text-slate-800">Registro de Perdas</h2>
-                  <p className="text-slate-500 text-sm">Histórico detalhado de baixas por perda/quebra.</p>
-                </div>
+                
+                <button 
+                  onClick={() => {
+                    setBulkMovementType('EXIT_LOSS');
+                    setIsBulkMovementOpen(true);
+                  }}
+                  className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors flex items-center justify-center gap-2 shadow-sm"
+                >
+                  <AlertTriangle size={18} />
+                  <span>Registrar Perda</span>
+                </button>
               </div>
               
               <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
@@ -1238,6 +1282,7 @@ export function App() {
           items={currentUnitItems}
           onConfirm={handleBulkMovement}
           onCancel={() => setIsBulkMovementOpen(false)}
+          initialType={bulkMovementType}
         />
       )}
 

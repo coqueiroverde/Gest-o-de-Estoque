@@ -1,21 +1,22 @@
 
 import React, { useState, useMemo } from 'react';
 import { InventoryItem, MovementType } from '../types';
-import { ArrowDown, ArrowUp, AlertTriangle, X, Save, Search } from 'lucide-react';
+import { ArrowDown, ArrowUp, AlertTriangle, X, Save, Search, RefreshCw } from 'lucide-react';
 
 interface BulkMovementModalProps {
   items: InventoryItem[];
-  onConfirm: (movements: { itemId: string; quantity: number; cost?: number }[], type: MovementType, reason: string) => void;
+  onConfirm: (movements: { itemId: string; quantity: number; cost?: number; updatePrice?: boolean }[], type: MovementType, reason: string) => void;
   onCancel: () => void;
+  initialType?: MovementType;
 }
 
-export const BulkMovementModal: React.FC<BulkMovementModalProps> = ({ items, onConfirm, onCancel }) => {
-  const [type, setType] = useState<MovementType>('EXIT_PRODUCTION');
+export const BulkMovementModal: React.FC<BulkMovementModalProps> = ({ items, onConfirm, onCancel, initialType }) => {
+  const [type, setType] = useState<MovementType>(initialType || 'EXIT_PRODUCTION');
   const [reason, setReason] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   
-  // Stores quantity and optional cost for each item ID
-  const [changes, setChanges] = useState<Record<string, { qty: string; cost: string }>>({});
+  // Stores quantity, optional cost, and update flag for each item ID
+  const [changes, setChanges] = useState<Record<string, { qty: string; cost: string; updatePrice: boolean }>>({});
 
   // Group items by category
   const groupedItems = useMemo(() => {
@@ -48,25 +49,33 @@ export const BulkMovementModal: React.FC<BulkMovementModalProps> = ({ items, onC
   const handleQtyChange = (id: string, val: string) => {
     setChanges(prev => ({
       ...prev,
-      [id]: { ...prev[id], qty: val }
+      [id]: { ...prev[id], qty: val, updatePrice: prev[id]?.updatePrice ?? true }
     }));
   };
 
   const handleCostChange = (id: string, val: string) => {
     setChanges(prev => ({
       ...prev,
-      [id]: { ...prev[id], cost: val }
+      [id]: { ...prev[id], cost: val, updatePrice: prev[id]?.updatePrice ?? true }
+    }));
+  };
+
+  const handleUpdatePriceToggle = (id: string) => {
+    setChanges(prev => ({
+      ...prev,
+      [id]: { ...prev[id], updatePrice: !prev[id]?.updatePrice }
     }));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    const movements = Object.entries(changes)
+    const movements = (Object.entries(changes) as [string, { qty: string; cost: string; updatePrice: boolean }][])
       .map(([itemId, data]) => ({
         itemId,
         quantity: Number(data.qty),
-        cost: data.cost ? Number(data.cost) : undefined
+        cost: data.cost ? Number(data.cost) : undefined,
+        updatePrice: data.updatePrice
       }))
       .filter(m => m.quantity > 0);
 
@@ -75,7 +84,7 @@ export const BulkMovementModal: React.FC<BulkMovementModalProps> = ({ items, onC
     onConfirm(movements, type, reason);
   };
 
-  const activeCount = Object.values(changes).filter(c => Number(c.qty) > 0).length;
+  const activeCount = (Object.values(changes) as { qty: string }[]).filter(c => Number(c.qty) > 0).length;
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-2 md:p-4 z-50 backdrop-blur-sm">
@@ -152,7 +161,7 @@ export const BulkMovementModal: React.FC<BulkMovementModalProps> = ({ items, onC
                   <th className="px-4 py-3 border-b border-slate-200">Item</th>
                   <th className="px-4 py-3 border-b border-slate-200 w-28 text-center">Qtd</th>
                   {type === 'ENTRY_PURCHASE' && (
-                    <th className="px-4 py-3 border-b border-slate-200 w-28 text-center">Novo Custo</th>
+                    <th className="px-4 py-3 border-b border-slate-200 w-32 text-center">Novo Custo</th>
                   )}
                 </tr>
               </thead>
@@ -167,7 +176,9 @@ export const BulkMovementModal: React.FC<BulkMovementModalProps> = ({ items, onC
                     </tr>
                     {/* Items in Category */}
                     {groupedItems[category].map(item => {
-                      const isActive = Number(changes[item.id]?.qty) > 0;
+                      const data = changes[item.id] || { qty: '', cost: '', updatePrice: true };
+                      const isActive = Number(data.qty) > 0;
+                      
                       return (
                         <tr key={item.id} className={`transition-colors border-b border-slate-100 ${isActive ? 'bg-blue-50/50' : 'hover:bg-slate-50'}`}>
                           <td className="px-4 py-3">
@@ -180,11 +191,12 @@ export const BulkMovementModal: React.FC<BulkMovementModalProps> = ({ items, onC
                             <div className="flex items-center gap-1 bg-white border border-slate-300 rounded-lg overflow-hidden focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500">
                                <input 
                                   type="number"
+                                  inputMode="decimal"
                                   min="0"
                                   step="0.01"
                                   placeholder="0"
                                   className={`w-full py-1.5 px-2 text-center outline-none text-sm font-bold ${isActive ? 'text-blue-700' : 'text-slate-700'}`}
-                                  value={changes[item.id]?.qty || ''}
+                                  value={data.qty}
                                   onChange={(e) => handleQtyChange(item.id, e.target.value)}
                                />
                                <span className="text-[10px] text-slate-400 bg-slate-50 px-1.5 py-2 border-l border-slate-200">{item.unit}</span>
@@ -192,17 +204,33 @@ export const BulkMovementModal: React.FC<BulkMovementModalProps> = ({ items, onC
                           </td>
                           {type === 'ENTRY_PURCHASE' && (
                             <td className="px-2 py-3">
-                              <div className="relative">
-                                 <span className="absolute left-2 top-1.5 text-[10px] text-slate-400">R$</span>
-                                 <input 
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    placeholder={item.price.toFixed(2)}
-                                    className="w-full py-1.5 pl-6 pr-2 rounded-lg border border-slate-300 text-sm outline-none focus:border-emerald-500"
-                                    value={changes[item.id]?.cost || ''}
-                                    onChange={(e) => handleCostChange(item.id, e.target.value)}
-                                 />
+                              <div className="flex flex-col gap-1">
+                                <div className="relative">
+                                   <span className="absolute left-2 top-1.5 text-[10px] text-slate-400">R$</span>
+                                   <input 
+                                      type="number"
+                                      inputMode="decimal"
+                                      min="0"
+                                      step="0.01"
+                                      placeholder={item.price.toFixed(2)}
+                                      className="w-full py-1.5 pl-6 pr-2 rounded-lg border border-slate-300 text-sm outline-none focus:border-emerald-500"
+                                      value={data.cost}
+                                      onChange={(e) => handleCostChange(item.id, e.target.value)}
+                                   />
+                                </div>
+                                {Number(data.cost) > 0 && (
+                                  <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                                    <input 
+                                      type="checkbox" 
+                                      checked={data.updatePrice}
+                                      onChange={() => handleUpdatePriceToggle(item.id)}
+                                      className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 w-3 h-3"
+                                    />
+                                    <span className="text-[10px] text-slate-500 font-medium leading-none">
+                                      Atualizar cadastro
+                                    </span>
+                                  </label>
+                                )}
                               </div>
                             </td>
                           )}

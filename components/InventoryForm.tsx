@@ -145,6 +145,7 @@ export const InventoryForm: React.FC<InventoryFormProps> = ({ onSave, onCancel, 
                   type="number"
                   required
                   min="0"
+                  step="any"
                   value={minStock}
                   onChange={(e) => setMinStock(e.target.value)}
                   className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none"

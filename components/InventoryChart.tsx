@@ -15,7 +15,7 @@ export const InventoryChart: React.FC<InventoryChartProps> = ({ items }) => {
       return acc;
     }, {} as Record<string, number>);
 
-    return Object.entries(categoryMap)
+    return (Object.entries(categoryMap) as [string, number][])
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 6); // Top 6 categories
